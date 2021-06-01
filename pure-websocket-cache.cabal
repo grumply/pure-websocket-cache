@@ -1,0 +1,29 @@
+name:                pure-websocket-cache
+version:             0.8.0.0
+homepage:            purehs.org/doc/pure-websocket-cache
+license:             BSD3
+license-file:        LICENSE
+author:              Sean Hickman
+maintainer:          sean@grumply.com
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+source-repository head
+  type: git
+  location: https://github.com/grumply/pure-websocket-cache.git
+
+library
+  exposed-modules:
+      Pure.WebSocket.Cache
+
+  build-depends:
+    base,
+    pure-elm,
+    pure-json,
+    pure-maybe,
+    pure-websocket,
+    containers
+
+  hs-source-dirs:      src
+  default-language:    Haskell2010

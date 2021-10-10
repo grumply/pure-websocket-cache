@@ -138,13 +138,17 @@ satisfy p pl rsp _ mdl = do
       
 view _ _ = SimpleHTML "pure-websocket-cache"
 
-data Policy = Cached | Uncached
+data Policy = Cached | Fresh | Uncached
 
 req :: (Ord payload, WS.Request request, ToJSON payload, FromJSON response, _) 
     => Policy -> WS.API msgs reqs -> Proxy request -> payload -> IO response
 req Uncached api rq pl = do
   mv <- newEmptyMVar
   publish (Request True True api rq pl pure (putMVar mv))
+  takeMVar mv
+req Fresh api rq pl = do
+  mv <- newEmptyMVar
+  publish (Request True False api rq pl pure (putMVar mv))
   takeMVar mv
 req _ api rq pl = do
   mv <- newEmptyMVar

@@ -1,13 +1,13 @@
 {-# language PatternSynonyms, ExplicitNamespaces, RankNTypes, LambdaCase, TypeOperators, DataKinds, TypeApplications, TypeFamilies, PartialTypeSignatures, FlexibleContexts, ExistentialQuantification, OverloadedStrings, ScopedTypeVariables, AllowAmbiguousTypes, TypeApplications #-}
 {-# options_ghc -fno-warn-partial-type-signatures #-}
-module Pure.WebSocket.Cache (Policy(..),Cache(..),req,with) where
+module Pure.WebSocket.Cache (Policy(..),Cache(..),req,with,flush,flushMany,flushAll) where
 
 import Pure.Elm.Component hiding (Left,Right,start)
 import Pure.Data.JSON (ToJSON,FromJSON)
 import Pure.Maybe (producingKeyed)
 import Pure.WebSocket as WS (request,API,type (∈),WebSocket,Request(..))
 
-import Data.Map as Map (Map,empty,insert,lookup,singleton)
+import Data.Map as Map (Map,delete,empty,insert,lookup,singleton)
 
 import Control.Concurrent (newEmptyMVar,putMVar,takeMVar)
 import Data.Foldable (for_)
@@ -33,6 +33,14 @@ instance Typeable _role => Component (Cache _role) where
 
     | forall rq pl rsp. (WS.Request rq, WS.Req rq ~ (Int,pl), WS.Rsp rq ~ rsp, Ord pl)
     => Satisfy (Proxy rq) pl rsp
+    
+    | forall rq pl. (WS.Request rq, WS.Req rq ~ (Int,pl), Ord pl)
+    => Flush (Proxy rq) pl
+    
+    | forall rq. (WS.Request rq) 
+    => FlushMany (Proxy rq)
+
+    | FlushAll
 
     | Startup
 
@@ -42,6 +50,9 @@ instance Typeable _role => Component (Cache _role) where
     Startup -> \_ mdl -> subscribe >> pure mdl
     Request f bp api p pl process cb -> request' f bp api p pl process cb
     Satisfy p pl rsp -> satisfy p pl rsp
+    Flush pr pl -> flush' pr pl
+    FlushMany pr -> flushMany' pr
+    FlushAll -> flushAll'
     
   view _ _ = SimpleHTML "pure-websocket-cache"
 
@@ -102,6 +113,26 @@ request' force bypass api p pl process cb (Cache ws) mdl
               { responses = Map.insert (typeRep p) rm' (responses mdl)
               }
 
+flush' :: forall _role rq pl. 
+         (WS.Request rq, WS.Req rq ~ (Int,pl), Ord pl, _) 
+      => Proxy rq -> pl -> Update (Cache _role)
+flush' p pl _ mdl =
+  case Map.lookup (typeRep p) (responses mdl) of
+    Just (RequestMap p' rm) ->
+      let 
+        rm' = Map.delete pl (unsafeCoerce rm)
+        responses' = Map.insert (typeRep p) (RequestMap p' (unsafeCoerce rm')) (responses mdl)
+      in 
+        pure mdl { responses = responses' }
+    _ ->
+      pure mdl
+
+flushMany' :: forall _role rq pl. (WS.Request rq, _) => Proxy rq -> Update (Cache _role)
+flushMany' p _ mdl = pure mdl { responses = Map.delete (typeRep p) (responses mdl) }
+
+flushAll' :: Update (Cache _role)
+flushAll' _ mdl = pure mdl { responses = Map.empty }
+
 satisfy :: forall _role rq pl rsp
          . (WS.Request rq, WS.Req rq ~ (Int,pl), WS.Rsp rq ~ rsp, Ord pl)
         => Proxy rq -> pl -> rsp 
@@ -148,6 +179,19 @@ req _ api rq pl = do
   mv <- newEmptyMVar
   publish (Request @_role False False api rq pl pure (putMVar mv))
   takeMVar mv
+
+flush :: forall _role request msgs reqs payload.
+         (Ord payload, WS.Request request, ToJSON payload, _)
+      => WS.API msgs reqs -> Proxy request -> payload -> IO ()
+flush _ p pl = publish (Flush @_role p pl)
+
+flushMany :: forall _role request msgs reqs payload.
+             (WS.Request request, ToJSON payload, _)
+          => WS.API msgs reqs -> Proxy request -> IO ()
+flushMany _ p = publish (FlushMany @_role p)
+
+flushAll :: forall _role. _ => IO ()
+flushAll = publish (FlushAll @_role)
 
 -- not the best place for this
 with :: forall _role request msgs reqs payload response. (Ord payload, WS.Rsp request ~ response, _ ) 

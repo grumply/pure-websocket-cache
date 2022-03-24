@@ -47,7 +47,7 @@ instance Typeable _role => Component (Cache _role) where
   startup = [Startup]
 
   upon = \case
-    Startup -> \_ mdl -> subscribe >> pure mdl
+    Startup -> \_ mdl -> subscribe @(Msg (Cache _role)) >> pure mdl
     Request f bp api p pl process cb -> request' f bp api p pl process cb
     Satisfy p pl rsp -> satisfy p pl rsp
     Flush pr pl -> flush' pr pl
